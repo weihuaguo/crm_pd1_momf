@@ -800,7 +800,6 @@ if (tamDEFlag) {
 	pdl1VlnGG <- VlnPlot(proObj, features = "CD274", group.by = "seurat_clusters", log = FALSE, pt.size = 0.1) + scale_y_continuous(limits = c(0.0, NA))
 	ggsave(plot = pdl1VlnGG, filename = paste(tamPf, "PDL1_FigSCellTAMY_manual_selected_VlnPlot.png", sep = ""),
 	       dpi = 300, width = 5, height = 5)
-	q(save = "no")
 
 	cat("UMAPs\n")
 	if (FALSE) { #F1a
