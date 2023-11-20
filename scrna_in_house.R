@@ -232,7 +232,7 @@ clstFlag <- FALSE
 majorVisFlag <- FALSE
 tamClusterFlag <- FALSE
 tamVisFlag <- FALSE
-tamDEFlag <- FALSE
+tamDEFlag <- TRUE
 m12Flag <- FALSE
 cciFlag <- FALSE
 
@@ -758,7 +758,7 @@ if (tamDEFlag) {
 	tamObj@meta.data$tam_yn <- ifelse(str_detect(tamObj@meta.data$myeloid_type, "mo/macrophage"), "TAM", "Non-TAM")
 	proObj <- subset(tamObj, subset = tam_yn == "TAM")
 	print(unique(proObj@meta.data$myeloid_type))
-	proObj@meta.data$seurat_clusters <- factor(proObj@meta.data$seurat_clusters, levels = cellAnnCleanDf$cluster[order(cellAnnCleanDf$myeloid_type)])
+	proObj@meta.data$seurat_clusters <- factor(proObj@meta.data$seurat_clusters, levels = cellAnnCleanDf$cluster[order(cellAnnCleanDf$myeloid_type, cellAnnCleanDf$cluster)])
 	pdl1VlnGG <- VlnPlot(proObj, features = "CD274", group.by = "seurat_clusters", log = FALSE, pt.size = 0.1) + scale_y_continuous(limits = c(0.0, NA))
 	ggsave(plot = pdl1VlnGG, filename = paste(tamPf, "PDL1_FigS3Y_manual_selected_VlnPlot.png", sep = ""),
 	       dpi = 300, width = 5, height = 5)
