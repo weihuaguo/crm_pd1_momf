@@ -233,10 +233,10 @@ readFlag <- FALSE
 inteFlag <- FALSE
 inteFilter <- 100 # Minimum cell number for integration
 clstFlag <- FALSE
-majorVisFlag <- TRUE
+majorVisFlag <- FALSE
 tamClusterFlag <- FALSE
 tamVisFlag <- FALSE
-tamDEFlag <- FALSE
+tamDEFlag <- TRUE
 
 dir.create(file.path(resDir, expID), showWarnings = FALSE)
 expDir <- paste(resDir, expID, sep = "/")
@@ -778,6 +778,7 @@ if (tamDEFlag) {
 	cellAnnDf[,1] <- NULL
 	cellMarkerDf <- cellAnnDf
 	cellAnnDf <- cellAnnDf[!is.na(cellAnnDf$myeloid_type),]
+	cellAnnCleanDf <- cellAnnDf[str_detect(cellAnnDf$myeloid_type, "macrophage"),]
 	print(head(cellAnnDf))
 
 	cols <- brewer.pal(length(unique(cellAnnDf$myeloid_type)), "Set2")
@@ -794,6 +795,12 @@ if (tamDEFlag) {
 	tamObj@meta.data$tam_yn <- ifelse(str_detect(tamObj@meta.data$myeloid_type, "mo/macrophage"), "TAM", "Non-TAM")
 	proObj <- subset(tamObj, subset = tam_yn == "TAM")
 	print(unique(proObj@meta.data$myeloid_type))
+
+	proObj@meta.data$seurat_clusters <- factor(proObj@meta.data$seurat_clusters, levels = cellAnnCleanDf$cluster[order(cellAnnCleanDf$myeloid_type, cellAnnCleanDf$cluster)])
+	pdl1VlnGG <- VlnPlot(proObj, features = "CD274", group.by = "seurat_clusters", log = FALSE, pt.size = 0.1) + scale_y_continuous(limits = c(0.0, NA))
+	ggsave(plot = pdl1VlnGG, filename = paste(tamPf, "PDL1_FigSCellTAMY_manual_selected_VlnPlot.png", sep = ""),
+	       dpi = 300, width = 5, height = 5)
+	q(save = "no")
 
 	cat("UMAPs\n")
 	if (FALSE) { #F1a
