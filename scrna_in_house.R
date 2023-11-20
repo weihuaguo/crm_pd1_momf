@@ -396,7 +396,7 @@ if (majorVisFlag) {
 	ggsave(paste(intePf, "FigS1D_top5_marker_heatmap.png", sep = ""), figs1d, dpi = 300, width = 24, height = 18)
 	saveRDS(figs1d, paste(intePf, "FigS1D_sc_top5_marker_heatmap.RDS", sep = ""))
 
-	if (FALSE) { # NOTE: To save some time
+	if (TRUE) { # NOTE: To save some time
 	c <- 0
 	for (imct in unique(proObj@meta.data$major_cell_type)) {
 		cat("Caculating", imct, "\n")
@@ -544,7 +544,6 @@ if (tamClusterFlag) {
 	proObj <- readRDS(paste(intePf, "Seurat_Objects_Clustered.RDS", sep = ""))
 
 	ist <- Sys.time()
-	subSrsc <- subset(proObj, idents = c(4,15,16)) # NOTE: ALL_POS_MARKER.xlsx
 	subSrsc <- subset(proObj, idents = c(5,12)) # NOTE: ALL_POS_MARKER.xlsx
 	colnames(subSrsc@meta.data)[colnames(subSrsc@meta.data) == "integrated_snn_res.0.5"] <- "integrated_snn_res.0.0"
 #	print(head(subSrsc@meta.data))
@@ -652,22 +651,6 @@ if (tamVisFlag) {
 		theme(axis.text.x = element_blank())
 	ggsave(paste(tamPf, "FigS3X_true_positive_relative_pct_boxplot.png", sep = ""), pn_gg, dpi = 300, width = 7.5, height = 6)
 
-	if (FALSE) {#FPN
-	gath_pn <- gath_pn %>%
-		group_by(seurat_clusters) %>%
-		mutate(nCluster = sum(nCell))
-	gath_pn$PDL1_SIGLEC15_PN <- factor(gath_pn$PDL1_SIGLEC15_PN, levels = c("PD-L1+", "SIGLEC15+", "PD-L1- SIGLEC15-", "PD-L1+ SIGLEC15+"))
-	figs3h <- ggplot(gath_pn, aes(x = PDL1_SIGLEC15_PN, y = nCell, fill = seurat_clusters)) +
-		geom_bar(stat = "identity", position = "fill", color = "black") +
-		labs(y = "Relative cell number", x = "Monocyte/macrophage type based on \nnon-zero normalized expression", fill = "Cluster (r = 0.5)") +
-		coord_flip() +
-		guides(fill=guide_legend(nrow=2,byrow=TRUE)) +
-		theme_classic() +
-		theme(legend.position = "top")
-	ggsave(plot = figs3h, filename = paste(tamPf, "FigS3H_true_pn_bar.png", sep = ""), dpi = 300, width = 9, heigh = 3)
-	saveRDS(figs3h, paste(tamPf, "FigS3H_true_pn_bar.RDS", sep = ""))
-	} #FPN
-
 	figs3f <- FeaturePlot(tamObj, features = c("CD274", "SIGLEC15"), blend = T)
 	ggsave(plot = figs3f, filename = paste(tamPf, "FigS3F_UMAP_blend_pdl1.png", sep = ""), dpi = 300, width = 18, heigh = 4)
 	saveRDS(figs3f, paste(tamPf, "FigS3F.RDS", sep = ""))
@@ -758,6 +741,7 @@ if (tamDEFlag) {
 	cellAnnDf[,1] <- NULL
 	cellMarkerDf <- cellAnnDf
 	cellAnnDf <- cellAnnDf[!is.na(cellAnnDf$myeloid_type),]
+	cellAnnCleanDf <- cellAnnDf[str_detect(cellAnnDf$myeloid_type, "macrophage"),]
 	print(head(cellAnnDf))
 
 	cols <- brewer.pal(length(unique(cellAnnDf$myeloid_type)), "Set2")
@@ -774,13 +758,12 @@ if (tamDEFlag) {
 	tamObj@meta.data$tam_yn <- ifelse(str_detect(tamObj@meta.data$myeloid_type, "mo/macrophage"), "TAM", "Non-TAM")
 	proObj <- subset(tamObj, subset = tam_yn == "TAM")
 	print(unique(proObj@meta.data$myeloid_type))
+	proObj@meta.data$seurat_clusters <- factor(proObj@meta.data$seurat_clusters, levels = cellAnnCleanDf$cluster[order(cellAnnCleanDf$myeloid_type)])
+	pdl1VlnGG <- VlnPlot(proObj, features = "CD274", group.by = "seurat_clusters", log = FALSE, pt.size = 0.1) + scale_y_continuous(limits = c(0.0, NA))
+	ggsave(plot = pdl1VlnGG, filename = paste(tamPf, "PDL1_FigS3Y_manual_selected_VlnPlot.png", sep = ""),
+	       dpi = 300, width = 5, height = 5)
 
 	cat("UMAPs\n")
-	if (FALSE) { #F1a
-	fig1a <- DimPlot(proObj, reduction = "umap", label = TRUE) + labs(color = "Clusters (r = 0.5)", title = "")
-	ggsave(plot = fig1a, filename = paste(tamPf, "Fig1A_UMAP_clean_tam_cluster.png", sep = ""), dpi = 300, width = 9, heigh = 6)
-	saveRDS(fig1a, paste(tamPf, "Fig1A.RDS", sep = ""))
-	} #F1a
 
 	fig1b <- FeaturePlot(proObj, features = c("CD274", "SIGLEC15"), blend = T)
 	ggsave(plot = fig1b, filename = paste(tamPf, "Fig1B_UMAP_clean_blend_pdl1.png", sep = ""), dpi = 300, width = 18, heigh = 4)
