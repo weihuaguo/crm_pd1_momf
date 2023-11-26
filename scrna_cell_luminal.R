@@ -206,6 +206,12 @@ resScreen <- function(srsc, plotPf, plotDir, batchName = NULL, res = 300, ndim =
 	return(srsc)
 }
 
+gg_color_hue <- function(n) {
+	hues <- seq(15, 375, length = n + 1)
+	hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+
 cat("Loading packages...\n")
 suppressMessages(library(dplyr))
 suppressMessages(library(tidyr))
@@ -625,14 +631,16 @@ if (tamVisFlag) {
 
 	cols <- brewer.pal(length(unique(cellAnnDf$myeloid_type)), "Set2")
 	names(cols) <- unique(cellAnnDf$myeloid_type)
-	cols['PD-L1- mo/macrophage'] <- "dodgerblue"
-	cols['PD-L1+ mo/macrophage'] <- "firebrick"
+#	cols['PD-L1- mo/macrophage'] <- "dodgerblue"
+#	cols['PD-L1+ mo/macrophage'] <- "firebrick"
 
 	pdl1_cols <- c("PD-L1- mo/macrophage" = "dodgerblue", "PD-L1+ mo/macrophage" = "firebrick")
 
 	tamObj@meta.data$myeloid_type <- "NA"
+	tamObj@meta.data$pdl1_status <- "NA"
 	for (ic in cellAnnDf$cluster) {
 		tamObj@meta.data$myeloid_type[tamObj@meta.data$seurat_clusters == ic] <- cellAnnDf$myeloid_type[cellAnnDf$cluster == ic]
+		tamObj@meta.data$pdl1_status[tamObj@meta.data$seurat_clusters == ic] <- cellAnnDf$pdl1_status[cellAnnDf$cluster == ic]
 	}
 #	print(head(tamObj@meta.data))
 	tamObj@meta.data$PDL1_expr <- tamObj[['RNA']]@data["CD274",]
@@ -648,23 +656,63 @@ if (tamVisFlag) {
 	ggsave(paste(tamPf, "FigSCellTAMC_top5_marker_heatmap.png", sep = ""), figs3c, dpi = 300, width = 18, height = 12)
 	saveRDS(figs3c, paste(tamPf, "FigSCellTAMC_sc_top5_marker_heatmap.RDS", sep = ""))
 
+	geneExpr <- AverageExpression(tamObj, features = topMarkers$gene, group.by = "seurat_clusters") 
+	geneExpr <- as.data.frame(geneExpr$RNA)
+	cellType <- data.frame(colnames(geneExpr))
+	colnames(cellType) <- 'Seurat clusters'
+	cellType$`Seurat clusters` <- factor(cellType$`Seurat clusters`, levels = seq(0,max(topMarkers$cluster),1))
+	ann_cols <- gg_color_hue(length(unique(topMarkers$cluster)))
+	names(ann_cols) <- unique(topMarkers$cluster)[order(as.numeric(unique(topMarkers$cluster)))]
+	print(ann_cols)
+	top_anno = HeatmapAnnotation(df = cellType,
+				     border = T,
+				     show_annotation_name = F,
+				     gp = gpar(col = 'black'),
+				     col = list(`Seurat clusters` = ann_cols))
+	marker_exp <- t(scale(t(geneExpr),scale = T,center = T))
+	print(topMarkers$gene)
+	cleanMarkers <- topMarkers[order(topMarkers$cluster),]
+	cleanMarkers <- cleanMarkers[!duplicated(cleanMarkers$gene),]
+	rownames(cleanMarkers) <- cleanMarkers$gene
+	cleanMarkers <- cleanMarkers[rownames(marker_exp),]
+	print(rownames(marker_exp))
+	print(dim(topMarkers))
+	print(dim(marker_exp))
+	avgHm <- Heatmap(marker_exp,
+			 name = "Z-score\n(Average expression)",
+		cluster_rows = F,
+		cluster_columns = F,
+		show_column_names = F,
+		show_row_names = T,
+		row_order = order(cleanMarkers$cluster),
+		heatmap_legend_param = list(title = ""),
+		col = colorRampPalette(c("#2fa1dd", "white", "#f87669"))(100),
+		border = 'black',
+		rect_gp = gpar(col = "black", lwd = 1),
+		row_names_gp = gpar(fontsize = 10),
+		column_names_gp = gpar(fontsize = 10),
+		top_annotation = top_anno)
+	png(filename = paste(tamPf, "FigS5D_mc_top5_marker_avg_heatmap.png", sep = ""),res = 600, width = 6, height = 8,units = "in")
+	print(draw(avgHm, merge_legend = T))
+	dev.off()
+
 	true_pn <- tamObj@meta.data %>%
 		group_by(seurat_clusters, PDL1_SIGLEC15_PN) %>%
 		summarize(nCell = n())
 	spr_pn <- spread(true_pn[,c("seurat_clusters", "PDL1_SIGLEC15_PN", "nCell")], "PDL1_SIGLEC15_PN", "nCell")
 	spr_pn[is.na(spr_pn)] <- 0
 	gath_pn <- gather(spr_pn, "PDL1_SIGLEC15_PN", "nCell", unique(true_pn$PDL1_SIGLEC15_PN))
-	gath_pn <- merge(gath_pn, cellAnnDf[,c("cluster", "myeloid_type")], by.x = "seurat_clusters", by.y = "cluster", all.x = T)
+	gath_pn <- merge(gath_pn, cellAnnDf[,c("cluster", "pdl1_status")], by.x = "seurat_clusters", by.y = "cluster", all.x = T)
 	write.csv(gath_pn, paste(tamPf, "true_pn_counts.csv", sep = "")) #ST1
 
 	plot_pn <- gath_pn[gath_pn$PDL1_SIGLEC15_PN %in% c("PD-L1+", "SIGLEC15+"),]
 	plot_pn <- plot_pn %>% group_by("PDL1_SIGLEC15_PN") %>% mutate(pos_total_num = sum(nCell))
-	plot_pn <- plot_pn[str_detect(plot_pn$myeloid_type, "macrophage"),]
+	plot_pn <- plot_pn[str_detect(plot_pn$pdl1_status, "macrophage"),]
 	plot_pn$pos_per <- plot_pn$nCell/plot_pn$pos_total_num * 100
-	pn_gg <- ggplot(plot_pn, aes(x = myeloid_type, y = pos_per)) +
-		geom_boxplot(aes(fill = myeloid_type), alpha = 0.2) +
+	pn_gg <- ggplot(plot_pn, aes(x = pdl1_status, y = pos_per)) +
+		geom_boxplot(aes(fill = pdl1_status), alpha = 0.2) +
 		geom_point(aes(color = seurat_clusters)) +
-		stat_compare_means(aes(group = myeloid_type), label = "p.signif") +
+		stat_compare_means(aes(group = pdl1_status), label = "p.signif") +
 		facet_wrap(~PDL1_SIGLEC15_PN, nrow = 1, scales = "free") +
 		scale_fill_manual(values = pdl1_cols) +
 		labs(x = "PD-L1 status", y = "Percentage of TP cells within each cluster to total TP cell number", color = "Cluster (r = 0.6)", fill = "PD-L1 status") +
@@ -707,7 +755,7 @@ if (tamVisFlag) {
 		labs(color = "Myeloid cell types", title = "Annotated and merged cell types") +
 #		scale_color_brewer(palette = "Set3") +
 		scale_color_manual(values = cols)
-	ggsave(plot = fig1a, filename = paste(tamPf, "Fig1A_UMAP_all_myeloid_pdl1.png", sep = ""), dpi = 600, width = 9, heigh = 6)
+	ggsave(plot = fig1a, filename = paste(tamPf, "FigS5B_UMAP_all_myeloid.png", sep = ""), dpi = 600, width = 9, heigh = 6)
 	saveRDS(fig1a, paste(tamPf, "Fig1A.RDS", sep = ""))
 
 	sigMarkers <- c("CD14", "CD68", "HLA.DRA", "CD1C", "CST3", "GPX1", "KIT", "TPSAB1", "CLEC4C", "CEACAM8", "CTAG2", "S100A9", "MARC1")#, "CD274", "SIGLEC15", "CD3D")
@@ -783,20 +831,20 @@ if (tamDEFlag) {
 
 	cols <- brewer.pal(length(unique(cellAnnDf$myeloid_type)), "Set2")
 	names(cols) <- unique(cellAnnDf$myeloid_type)
-	cols['PD-L1- mo/macrophage'] <- "dodgerblue"
-	cols['PD-L1+ mo/macrophage'] <- "firebrick"
+#	cols['PD-L1- mo/macrophage'] <- "dodgerblue"
+#	cols['PD-L1+ mo/macrophage'] <- "firebrick"
 
 	pdl1_cols <- c("PD-L1- mo/macrophage" = "dodgerblue", "PD-L1+ mo/macrophage" = "firebrick")
 
 	tamObj@meta.data$myeloid_type <- "NA"
 	for (ic in cellAnnDf$cluster) {
-		tamObj@meta.data$myeloid_type[tamObj@meta.data$seurat_clusters == ic] <- cellAnnDf$myeloid_type[cellAnnDf$cluster == ic]
+		tamObj@meta.data$myeloid_type[tamObj@meta.data$seurat_clusters == ic] <- cellAnnDf$pdl1_status[cellAnnDf$cluster == ic]
 	}
 	tamObj@meta.data$tam_yn <- ifelse(str_detect(tamObj@meta.data$myeloid_type, "mo/macrophage"), "TAM", "Non-TAM")
 	proObj <- subset(tamObj, subset = tam_yn == "TAM")
 	print(unique(proObj@meta.data$myeloid_type))
 
-	proObj@meta.data$seurat_clusters <- factor(proObj@meta.data$seurat_clusters, levels = cellAnnCleanDf$cluster[order(cellAnnCleanDf$myeloid_type, cellAnnCleanDf$cluster)])
+	proObj@meta.data$seurat_clusters <- factor(proObj@meta.data$seurat_clusters, levels = cellAnnCleanDf$cluster[order(cellAnnCleanDf$pdl1_status, cellAnnCleanDf$cluster)])
 	pdl1VlnGG <- VlnPlot(proObj, features = "CD274", group.by = "seurat_clusters", log = FALSE, pt.size = 0.1) + scale_y_continuous(limits = c(0.0, NA))
 	ggsave(plot = pdl1VlnGG, filename = paste(tamPf, "PDL1_FigSCellTAMY_manual_selected_VlnPlot.png", sep = ""),
 	       dpi = 300, width = 5, height = 5)
@@ -830,7 +878,7 @@ if (tamDEFlag) {
 		ggsave(plot = pdl1VlnGG, filename = paste(tamPf, ivg, "_Fig1HI_manual_selected_VlnPlot.png", sep = ""),
 		       dpi = 300, width = 5, height = 5)
 
-		pdl1VlnGG <- VlnPlot(proObj, features = ivg, group.by = "myeloid_type", log = FALSE, pt.size = 0,
+		pdl1VlnGG <- VlnPlot(proObj, features = ivg, group.by = "myeloid_type", log = FALSE, pt.size = 0.1,
 				     cols = c('dodgerblue', 'firebrick')) + scale_y_continuous(limits = c(0.0, NA)) + stat_compare_means(label = "p.signif")
 		ggsave(plot = pdl1VlnGG, filename = paste(tamPf, ivg, "_Fig1HI_manual_selected_VlnPlot_stats.png", sep = ""),
 		       dpi = 300, width = 5, height = 6)
@@ -886,323 +934,3 @@ if (tamDEFlag) {
 
 
 }
-
-q(save = "no")
-sigMarker <- c("PTPRC", "EPCAM", "COL1A1", "CD3D", "CD8A", "CD4", 
-	       "PDCD1", "TCF7", "NKG7", "MS4A1", "CD27", "CD19", 
-	      "CD68", "FCER1A", "HLA-DRA", "NCAM1", "TPSAB1", "GNLY", 
-	      "FOXP3", "TBX21", "GATA3")
-metaItems <- c("patient", "tissue", "dataset", "er_status", "pr_status", "her2_status")
-
-res_dir <- paste(sc_dir, "/breast_results", sep = "")
-if (any(dataset_ids == "all")) {
-	cat("All the available breast scRNA-seq will be used!\n")
-	#TODO: need to read or find all the datasets
-} else {
-	expr_name <- paste(dataset_ids, collapse="_")
-	tis_name <- paste(tissues, collapse = "_")
-	expr_name <- paste(expr_name, tis_name, inte_prep, subtype, expr_id, sep = "_")
-}
-print(expr_name)
-
-dir.create(file.path(res_dir, expr_name), showWarnings = FALSE)
-expDir <- paste(res_dir, "/", expr_name, sep = "")
-ppf <- paste(res_dir, "/", expr_name, "/", expr_name, "_", sep = "")
-
-resFolder <- paste(expr_name, "_r", glb_res, sep = "")
-resFolder <- paste("r", glb_res, sep = "")
-rDir <- paste(res_dir, "/", expr_name, "/", resFolder, "/", sep = "")
-rplotPf <- paste(rDir, "/", resFolder, "_", expr_name, "_", sep = "")
-if (!evFlag) {
-srsc <- readRDS(paste(rplotPf, "Seurat_Objects_Clustered.RDS", sep = ""))
-print(srsc)
-}
-subExpID <- paste("tam_glbr", glb_res, sep = "") #r1.5
-dir.create(file.path(expDir, subExpID), showWarnings = FALSE)
-subDir <- paste(expDir, "/", subExpID, "/", sep = "")
-sppf <- paste(subDir, subExpID, "_", expr_name, "_", sep = "")
-
-if (tamInteFlag) {
-	subSrsc <- subset(srsc, idents = tamCluster)
-	subSrList <- SplitObject(subSrsc, split.by="batch_factor")
-	for (isn in names(subSrList)) {
-		tmpCts <- subSrList[[isn]]@assays$RNA@counts
-		tmpMeta <- subSrList[[isn]]@meta.data
-		print(dim(tmpMeta))
-		if (nrow(tmpMeta) >= 30) {
-			colnames(tmpMeta) <- str_c("G_",colnames(tmpMeta))
-			tmpSS <- CreateSeuratObject(counts = tmpCts, project = isn, meta.data=tmpMeta)
-			plotPf <- paste(sppf, isn, "_", sep = "")
-			if (inte_prep == "std") {
-				cat("\tUsing the standard approach for integration (log-normalization)...\n")
-				tmpSS <- NormalizeData(tmpSS, assay = "RNA", 
-						       normalization.method = "LogNormalize", 
-						       scale.factor = 10000)
-				################
-				cat("\tFind most variant features...\n")
-				tmpSS <- FindVariableFeatures(tmpSS, selection.method = "vst", 
-							      nfeatures = 2000)
-				top10Features <- head(VariableFeatures(tmpSS), 18)
-				varGG <- VariableFeaturePlot(tmpSS)
-				labVargg <- LabelPoints(plot = varGG, points = top10Features, 
-							repel = TRUE)
-				ggsave(plot = labVargg, 
-				       filename = paste(plotPf, "variable_features.png", sep = ""), 
-				       dpi = 300, width = 9, height = 6)
-			}
-			if (inte_prep == "sct") {
-				cat("\tUsing SCT approach for integration prep...\n")
-				plan("multiprocess", workers = detectCores()/2)
-				tmpSS <- SCTransform(tmpSS, verbose = TRUE)
-			}
-			subSrList[[isn]] <- tmpSS
-		} else {
-			subSrList[[isn]] <- NULL
-		}
-	}
-	print(sppf)
-	saveRDS(subSrList, paste(sppf, "preprocessed_seurat_list.RDS", sep = ""))
-	if (inte_prep == "std") {
-		ist = Sys.time()
-		cat("Start to merge the samples with batch correction...\n")
-
-		cat("Standard integration process (log-normalization)\n")
-		integrateAnchors <- FindIntegrationAnchors(object.list = subSrList)
-		inteObjs <- IntegrateData(anchorset = integrateAnchors, k.weight = 30)
-		DefaultAssay(inteObjs) = "integrated"
-	}
-	if (inte_prep == "sct") {
-		ist = Sys.time()
-		cat("SCT-based integration process...\n")
-		inteFeat <- SelectIntegrationFeatures(object.list = subSrList, nfeatures = 3000)
-		subSrList <- PrepSCTIntegration(object.list = subSrList, 
-						anchor.features = inteFeat, verbose = TRUE)
-		plan("multiprocess", workers = detectCores()/2)
-		inteAnchors <- FindIntegrationAnchors(object.list = subSrList, 
-						      normalization.method = "SCT", 
-						      anchor.features = inteFeat, 
-						      verbose = TRUE)
-		inteObjs <- IntegrateData(anchorset = inteAnchors, k.weight = 30,
-					  normalization.method = "SCT", verbose = TRUE)
-	}
-	saveRDS(inteObjs, file = paste(sppf, "integrated_seurat_object.RDS", sep = ""))
-	print(inteObjs)
-	cat("Total integration cost")
-	print(Sys.time()-ist)
-}
-
-if (tamPostFlag) {
-	st <- Sys.time()
-#	if (splitFlag) {rdsFile <- paste(expDir, expID, "_", intePref, "_split.RDS", sep = "")}
-	inteObjs <- readRDS(paste(sppf, "integrated_seurat_object.RDS", sep = ""))
-	print(inteObjs)
-	inteProObj <- srPostPro(inteObjs, plotPf = sppf, expDir = subDir, 
-				rdsSave = TRUE, ndim = 30, exprName = paste(expr_name, subExpID, sep = "_"),
-				jsFlag = FALSE, qcFlag = FALSE, tamFlag = TRUE,
-				plotFeat = c("CD68", "HLA.DRA", "CD274", "SIGLEC15"),
-				resGrid = seq(from=0.2, to=3.0, by=0.2),
-				metaPlot = str_c("G_", metaItems))
-	print(inteProObj)
-	print(Sys.time() - st)
-}
-
-if (tamCompFlag) {
-	tam_res_folder <- paste("r", tam_res, sep = "")
-	tamSubPf <- paste(subDir, tam_res_folder,  "/", 
-			  tam_res_folder, "_", expr_name, "_", subExpID,"_",sep = "")
-	tamRDSFile <- paste(tamSubPf, "Seurat_Objects_Clustered.RDS", sep = "")
-	proObj <- readRDS(tamRDSFile)
-	print(proObj)
-
-	## List for annotate PD-L1 status on TAM
-	tamTypes <- c("PDL1pos", "PDL1neg")
-	tamAnnList <- vector(mode = "list", length = length(tamTypes))
-	names(tamAnnList) <- tamTypes
-	# r0.6
-	tamAnnList[["PDL1pos"]] <- c(0,2,3,4,5,12)
-	tamAnnList[["PDL1neg"]] <- c(1,6,8,11)
-
-	proObj@meta.data$PDL1 <- "NonTAM"
-	for (itt in names(tamAnnList)) {
-		tmpMask <- proObj@meta.data$seurat_clusters %in% tamAnnList[[itt]]
-		proObj@meta.data[tmpMask, "PDL1"] <- itt
-	}
-
-	## Big group UMAP
-	pdl1DimGG <- DimPlot(proObj, reduction = "umap", 
-			     group.by = "PDL1", cols = c("grey", "dodgerblue", "indianred"))
-	ggsave(plot = pdl1DimGG, 
-	       filename = paste(tamSubPf, "post_PDL1_status_dimplot.png", sep = ""),
-	       dpi = 300, width = 6, height = 4)
-	proObj@meta.data$G_seurat_clusters <- as.factor(proObj@meta.data$G_seurat_clusters)
-	pdl1DimGG <- DimPlot(proObj, reduction = "umap", group.by = "G_seurat_clusters")
-	ggsave(plot = pdl1DimGG, 
-	       filename = paste(tamSubPf, "G_seurat_cluster_dimplot.png", sep = ""),
-	       dpi = 300, width = 6, height = 4)
-
-	## Subset 
-	tamObj <- proObj
-	proObj <- subset(proObj, subset = PDL1 == "NonTAM", invert = TRUE)
-	pdl1Col <- c("white", "dodgerblue", "indianred")
-	pdl1Col <- c("dodgerblue", "indianred")
-
-	pdl1DimGG <- DimPlot(proObj, reduction = "umap", group.by = "PDL1", cols = pdl1Col) +
-		xlim(-5, 7.5)
-	ggsave(plot = pdl1DimGG, 
-	       filename = paste(tamSubPf, "post_PDL1_status_dimplot_clean.png", sep = ""),
-	       dpi = 300, width = 6, height = 4)
-
-	pdl1VlnGG <- VlnPlot(proObj, features = c("rna_CD274", "rna_SIGLEC15"), 
-			     group.by = "PDL1", log = TRUE)
-	ggsave(plot = pdl1VlnGG, 
-	       filename = paste(tamSubPf, "post_PDL1_status_VlnPlot.png", sep = ""),
-	       dpi = 300, width = 6, height = 4)
-	pdl1_cts <- proObj@meta.data %>% 
-		group_by(G_patient, PDL1) %>% 
-		summarise(n = n()) %>%
-		group_by(G_patient) %>%
-		mutate(per = n/sum(n))
-	write.csv(pdl1_cts, paste(tamSubPf, "pdl1_cell_counts.csv", sep = ""))
-
-
-	cat("Start to run DE analysis -- Wilcox\n")
-	deRes <- FindMarkers(proObj, ident.1 = "PDL1pos", ident.2 = "PDL1neg", 
-			     group.by = "PDL1", test.use = "wilcox")
-	write.csv(deRes, paste(tamSubPf, "post_wilcox_pos_vs_neg_PDL1_res.csv", sep = ""))
-	deRes <- deRes[order(deRes$avg_log2FC),]
-	sigMask <- deRes$p_val_adj <= 0.10 &(deRes$avg_log2FC >= 0.5 | deRes$avg_log2FC <= -0.5)
-	sigFeat <- rownames(deRes)[sigMask]
-	png(paste(tamSubPf, "post_wilcox_marker_heatmap.png", sep = ""), 
-	    res = 300, width = 9, height = 12, units = "in")
-	print(DoHeatmap(object = proObj, features = sigFeat, group.by = "PDL1", label = FALSE, 
-			group.colors = pdl1Col))
-	gar <- dev.off()
-
-	cat("Start to run DE analysis -- MAST\n")
-	deRes <- FindMarkers(proObj, ident.1 = "PDL1pos", ident.2 = "PDL1neg", 
-			     group.by = "PDL1", test.use = "MAST")
-	write.csv(deRes, paste(tamSubPf, "post_MAST_pos_vs_neg_PDL1_res.csv", sep = ""))
-	deRes <- deRes[order(deRes$avg_log2FC),]
-	sigMask <- deRes$p_val_adj <= 0.10 &(deRes$avg_log2FC >= 0.5 | deRes$avg_log2FC <= -0.5)
-	sigFeat <- rownames(deRes)[sigMask]
-	png(paste(tamSubPf, "post_MAST_marker_heatmap.png", sep = ""), 
-	    res = 300, width = 9, height = 12, units = "in")
-	print(DoHeatmap(object = proObj, features = sigFeat, group.by = "PDL1", label = FALSE, 
-			group.colors = pdl1Col))
-	gar <- dev.off()
-
-
-	## Output for CIBERSORTx
-	rnaExpr <- as.matrix(proObj[["RNA"]]@data)
-	allGene <- rownames(rnaExpr)
-#	print(rnaExpr[1:9, 1:6])
-	metaData <- t(proObj@meta.data)
-	cbstxOutDf <- rbind(metaData, rnaExpr)
-#	print(cbstxOutDf[1:9,1:6])
-#	print(dim(rnaExpr))
-#	print(length(allGene))
-#	cbstxOutDf <- FetchData(proObj, vars = c("PDL1", "seurat_clusters", allGene))
-#	write.csv(cbstxOutDf, paste(tamSubPf, "post_PDL1_for_cbstx.csv", sep = ""))
-}
-
-if (tamVisFlag) {
-	tam_res_folder <- paste("r", tam_res, sep = "")
-	tamSubPf <- paste(subDir, tam_res_folder,  "/", 
-			  tam_res_folder, "_", expr_name, "_", subExpID,"_",sep = "")
-	tamRDSFile <- paste(tamSubPf, "Seurat_Objects_Clustered.RDS", sep = "")
-	proObj <- readRDS(tamRDSFile)
-	print(proObj)
-
-	## List for annotate PD-L1 status on TAM
-	tamTypes <- c("PDL1pos", "PDL1neg")
-	tamAnnList <- vector(mode = "list", length = length(tamTypes))
-	names(tamAnnList) <- tamTypes
-	# r0.6
-	tamAnnList[["PDL1pos"]] <- c(0,2,3,4,5,12)
-	tamAnnList[["PDL1neg"]] <- c(1,6,8,11)
-	pdl1Col <- c("dodgerblue", "indianred")
-
-	proObj@meta.data$PDL1 <- "NonTAM"
-	for (itt in names(tamAnnList)) {
-		tmpMask <- proObj@meta.data$seurat_clusters %in% tamAnnList[[itt]]
-		proObj@meta.data[tmpMask, "PDL1"] <- itt
-	}
-	proObj <- subset(proObj, subset = PDL1 == "NonTAM", invert = TRUE)
-	print(proObj)
-
-	hmFeats <- c("SPP1", "FN1", "TREM2", "CD9", "FABP5", "FABP4", "LGALS3", "IL1RN", "CSTB", "LPL", 
-		     "C1QA", "CEBPD", "HLA.DQA1", "HLA.DQB1", "HLA.DQA2", "FOSB", "IL1B", "HLA.DPB1")
-
-	proObj <- ScaleData(proObj, assay = "RNA")
-	png(paste(tamSubPf, "manual_selected_marker_heatmap_v2.png", sep = ""), 
-	    res = 300, width = 6, height = 6, units = "in")
-	print(DoHeatmap(object = proObj, features = hmFeats, group.by = "PDL1", label = FALSE, 
-			group.colors = pdl1Col, assay = "RNA"))
-	gar <- dev.off()
-	for (ihf in hmFeats) {
-		pdl1VlnGG <- VlnPlot(proObj, features = ihf, group.by = "PDL1", log = TRUE, pt.size = 0,
-				     cols = c('dodgerblue', 'firebrick'))
-		ggsave(plot = pdl1VlnGG, filename = paste(tamSubPf, ihf, "_manual_selected_VlnPlot.png", sep = ""),
-		       dpi = 300, width = 3, height = 4)
-
-		pdl1Siglec15GG <- FeaturePlot(proObj, features = ihf, order = TRUE, 
-					      cols = c("honeydew", "purple")) + xlim(-5, 7.5)
-		ggsave(plot = pdl1Siglec15GG, filename = paste(tamSubPf, ihf, "_umap_clean.png", sep = ""),
-		       dpi = 300, width = 6, height = 4)
-
-	}
-
-	hmDotPlot <- DotPlot(proObj, features = hmFeats, cols = c("honeydew", "purple"), group.by = "PDL1", assay = "RNA") +
-		theme(axis.text.x = element_text(angle = 45, hjust = 1))
-	ggsave(plot = hmDotPlot, filename = paste(tamSubPf, "manual_selected_marker_dotplot.png", sep = ""),
-	       dpi = 300, width = 12, height = 4)
-
-}
-
-if (evFlag) { # EnhancedVolcanoPlots
-	library(EnhancedVolcano)
-	## Run DE analysis between PD-L1+/PD-L1- TAMs (Highly customized!)
-	cat("Visualize differential expression results between PD-L1+/- TAMs...\n")
-	tam_res_folder <- paste("r", tam_res, sep = "")
-	subPrefix <- paste(subDir, tam_res_folder,  "/", 
-			  tam_res_folder, "_", expr_name, "_", subExpID,"_",sep = "")
-
-	hmFeats <- c("SPP1", "FN1", "TREM2", "CD9", "FABP5", "FABP4", "LGALS3", "IL1RN", "CSTB", "LPL", 
-		     "C1QA", "CEBPD", "HLA.DQA1", "HLA.DQB1", "HLA.DQA2", "FOSB", "IL1B", "HLA.DPB1")
-
-	deRes <- read.csv(paste(subPrefix, "post_MAST_pos_vs_neg_PDL1_res.csv", sep = ""), 
-			  check.names = F, header = T, row.names = 1)
-	print(head(deRes))
-	
-	keyvals <- ifelse(deRes$avg_log2FC < -0.5, 'dodgerblue', 
-			  ifelse(deRes$avg_log2FC > 0.5, 'firebrick', 'grey'))
-	keyvals[is.na(keyvals)] <- 'grey'
-	names(keyvals)[keyvals == 'firebrick'] <- 'Upregulated\nin PD-L1+ TAM'
-	names(keyvals)[keyvals == 'grey'] <- 'Insiginificant genes'
-	names(keyvals)[keyvals == 'dodgerblue'] <- 'Upregulated\nin PD-L1- TAM'
-
-	ev <- EnhancedVolcano(deRes,
-			      lab = rownames(deRes),
-			      x = "avg_log2FC",
-			      y = "p_val_adj",
-			      title = "PD-L1+ vs PD-L1- TAM",
-			      subtitle = "MAST",
-			      colCustom = keyvals,
-			      colAlpha = 0.9,
-			      labSize = 3.6,
-			      pointSize = 2.0,
-			      xlim = c(-1.5, 1.5),
-			      pCutoff = 0.10,
-			      FCcutoff = 0.5,
-			      legendPosition = 'top',
-			      selectLab = hmFeats,
-			      ylab = bquote(~ '-' ~Log[10]~ 'Adjusted P-value'),
-			      drawConnectors = TRUE
-	)
-	png(paste(subPrefix, "post_MAST_pos_vs_neg_ev.png", sep = ""), 
-	    res = 300, height = 7.2, width = 9, units = 'in')
-	print(ev)
-	gar <- dev.off()
-
-}
-
