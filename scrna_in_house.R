@@ -222,6 +222,8 @@ suppressMessages(library(clustree))
 suppressMessages(library(EnhancedVolcano))
 suppressMessages(library(ComplexHeatmap))
 suppressMessages(library(circlize))
+suppressMessages(library(icellnet))
+
 
 workDir <- "/home/weihua/mnts/smb_plee/Group/weihua/pdl1_data_hub"
 dataDir <- paste(workDir, "1_inhouse_scrna_seq", sep = "/") # Please change this to repeat the work
