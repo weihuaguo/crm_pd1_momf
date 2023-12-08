@@ -727,6 +727,32 @@ if (tamVisFlag) {
 	ggsave(plot = fig1a, filename = paste(tamPf, "FigS2B_UMAP_all_myeloid.png", sep = ""), dpi = 600, width = 9, heigh = 6)
 	saveRDS(fig1a, paste(tamPf, "FigS2B.RDS", sep = ""))
 
+	print(head(tamObj@meta.data))
+	pdl1Expr <- tamObj@meta.data[str_detect(tamObj@meta.data$pdl1_status, "macro"),]
+	pdl1Expr$logExpr <- log2(pdl1Expr$PDL1_expr+1)
+	print(head(pdl1Expr))
+	write.csv(pdl1Expr, paste(tamPf, "PDL1_expression_meta_df.csv", sep = ""))
+
+	fig1d <- ggplot(pdl1Expr, aes(x = pdl1_status, y = PDL1_expr, fill = pdl1_status)) +
+		geom_violin(scale = "width", trim = TRUE) +
+		geom_jitter(size = 0.2, width = 0.2) +
+		labs(x = "PDL1 status", y = "Normalized expression", fill = "PDL1 status") +
+		scale_fill_manual(values = pdl1_cols) +
+		theme_classic() +
+		theme(strip.text.y = element_text(angle = 0), axis.text.x = element_blank())
+	ggsave(plot = fig1d, filename = paste(tamPf, "Fig1D_pdl1_violin_plot.png", sep = ""), 
+	       dpi = 300, width = 5, height = 6)
+	fig1d <- ggplot(pdl1Expr, aes(x = pdl1_status, y = logExpr, fill = pdl1_status)) +
+		geom_violin(scale = "width", trim = TRUE) +
+		geom_jitter(size = 0.2, width = 0.2) +
+		labs(x = "PDL1 status", y = "Normalized expression (log2)", fill = "PDL1 status") +
+		scale_fill_manual(values = pdl1_cols) +
+		theme_classic() +
+		theme(strip.text.y = element_text(angle = 0), axis.text.x = element_blank())
+	ggsave(plot = fig1d, filename = paste(tamPf, "Fig1D_pdl1_violin_log_plot.png", sep = ""), 
+	       dpi = 300, width = 5, height = 6)
+
+
 	sigMarkers <- c("CD14", "CD68", "HLA-DRA", "CD1C", "CST3", "GPX1", "KIT", "TPSAB1", "CLEC4C", "CEACAM8", "CTAG2", "S100A9", "MARC1")#, "CD274", "SIGLEC15", "CD3D")
 	inteGenes <- rownames(tamObj[['integrated']]@data)
 	rnaGenes <- rownames(tamObj[['RNA']]@data)
@@ -842,7 +868,6 @@ if (tamDEFlag) {
 				     cols = c('dodgerblue', 'firebrick')) + scale_y_continuous(limits = c(0.0, NA)) + stat_compare_means(label = "p.signif")
 		ggsave(plot = pdl1VlnGG, filename = paste(tamPf, ivg, "_Fig1HI_manual_selected_VlnPlot_stats.png", sep = ""),
 		       dpi = 300, width = 5, height = 6)
-
 	}
 
 	de_res <- FindMarkers(proObj, ident.1 = "PD-L1+ mo/macrophage", ident.2 = "PD-L1- mo/macrophage", group.by = "myeloid_type", logfc.threshold = 0.5, test.use = "MAST")
