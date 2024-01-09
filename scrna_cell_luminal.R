@@ -230,7 +230,7 @@ suppressMessages(library(ComplexHeatmap))
 suppressMessages(library(circlize))
 
 
-workDir <- "/home/weihua/mnts/smb_plee/Group/weihua/pdl1_data_hub"
+workDir <- "..." # Please change this directory
 dataDir <- paste(workDir, "4_cell_azizi_scrna_seq", sep = "/") # Please change this to repeat the work
 resDir <- paste(workDir, "5_cell_azizi_scrna_seq_result", sep = "/")
 
