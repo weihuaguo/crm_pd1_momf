@@ -225,7 +225,7 @@ suppressMessages(library(circlize))
 suppressMessages(library(icellnet))
 
 
-workDir <- "/home/weihua/mnts/smb_plee/Group/weihua/pdl1_data_hub"
+workDir <- "..." # Please change this directory
 dataDir <- paste(workDir, "1_inhouse_scrna_seq", sep = "/") # Please change this to repeat the work
 resDir <- paste(workDir, "2_inhouse_scrna_seq_result", sep = "/")
 
